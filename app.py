@@ -1,3 +1,4 @@
+# authelia string consts to read from labels
 CONST_AUTHELIA_STRING="authelia"
 CONST_ACCESS_POLICY_STRING="access_policy"
 
@@ -9,16 +10,20 @@ CONST_NETWORKSS_STRING="networks"
 CONST_RESOURCESS_STRING="resources"
 CONST_QUERY_STRING="query"
 
+# authelia policy options restrictions
+CONST_POLICY_OPTIONS=["bypass", "one_factor", "two_factor"]
+
+# traefik string consts to read from labels and traefik api
 CONST_TRAEFIK_STRING="traefik"
 CONST_HTTP_STRING="http"
 CONST_ROUTERS_STRING="routers"
 CONST_RULE_STRING="rule"
 
-CONST_POLICY_OPTIONS=["bypass", "one_factor", "two_factor"]
-
+# file write constants
 CONST_ACCESS_CONTROL_STRING="access_control"
 CONST_RULES_STRING="rules"
 
+# formatting
 CONST_INDENT_LEN=2
 
 # --authelia.access_policy.[name].domain= auto-genned
