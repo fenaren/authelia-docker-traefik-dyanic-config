@@ -42,7 +42,7 @@ import time
 import requests
 
  
-def query_traefik_service_domain(TRAEFIK_HOST, traefik_router):
+def query_traefik_router_domain(TRAEFIK_HOST, traefik_router):
     if TRAEFIK_HOST is not None:
         url = TRAEFIK_HOST+"/api/http/routers/" + traefik_router + "@docker"
         print("Trying to get details from traefik: ", url)
@@ -64,7 +64,7 @@ def run(labels, TRAEFIK_HOST):
     for _label_name,label_value in labels.items():
         label_parts = _label_name.lower().split(".")
         if label_parts[0] == CONST_TRAEFIK_STRING and label_parts[1] == CONST_HTTP_STRING and label_parts[2] == CONST_ROUTERS_STRING:
-            traefik_router = label_value
+            traefik_router = label_parts[3]
 
         if label_parts[0] == CONST_AUTHELIA_STRING and label_parts[1] == CONST_ACCESS_POLICY_STRING:
             current_group = groupings.get(label_parts[2], {})
@@ -96,7 +96,7 @@ def run(labels, TRAEFIK_HOST):
     for grouping in groupings.values(): 
         if CONST_DOMAIN_STRING not in grouping:
             grouping[CONST_DOMAIN_STRING] = "";
-            result = query_traefik_service_domain(TRAEFIK_HOST, traefik_router)
+            result = query_traefik_router_domain(TRAEFIK_HOST, traefik_router)
             if result is not None: 
                 grouping[CONST_DOMAIN_STRING] = result;
 
@@ -131,7 +131,7 @@ def main():
     ENABLE_DOCKER_SWARM = os.environ.get('DOCKER_SWARM', False)
     DOCKER_HOST = os.environ.get('DOCKER_HOST', None)
     TRAEFIK_HOST = os.environ.get("TRAEFIK_HOST", None)
-    FILE_NAME = os.environ.get("FILE_NAME", "/out/authelia_config.yml")
+    FILE_NAME = os.environ.get("FILE_NAME", "authelia_config.yml")
     api=None
     errors=0
     while errors <=3:
@@ -156,7 +156,7 @@ def main():
         result = run(labels, TRAEFIK_HOST)
         if result is not None:
             full_config.update(result)
-    write_to_file(full_config, FILE_NAME)
+    write_to_file(full_config, "/config/"+FILE_NAME)
 
 
 main()
