@@ -1,0 +1,50 @@
+version: '3.9'
+services:
+  secure-whoami-test:
+    image: "traefik/whoami"
+    #ports:
+    #- :80
+    networks:
+    - proxied
+    deploy:
+      labels:
+      - "traefik.enable=true"
+      - "dns.name=secure"
+      - "traefik.http.routers.secure-whoami.service=secure-whoami"
+      - "traefik.http.routers.secure-whoami.middlewares=authelia@docker"
+      - "traefik.http.services.secure-whoami.loadbalancer.server.port=80"
+      - "authelia.access_policy.secure-whoami.policy=two_factor"
+      - "authelia.access_policy.secure-whoami.subject=group:admin"
+      - "authelia.access_policy.secure-whoami.subject=user:greg"
+  basic-whoami-test:
+    image: "traefik/whoami"
+    #ports:
+    #- :80
+    networks:
+    - proxied
+    deploy:
+      labels:
+      - "traefik.enable=true"
+      - "dns.name=basic"
+      - "traefik.http.routers.basic-whoami.service=basic-whoami"
+      - "traefik.http.routers.basic-whoami.middlewares=authelia@docker"
+      - "traefik.http.services.basic-whoami.loadbalancer.server.port=80"
+      - "authelia.access_policy.basic-whoami.policy=one_factor"
+      - "authelia.access_policy.basic-whoami.subject=group:admin"
+
+  public-whoami-test:
+    image: traefik/whoami
+    networks:
+    - proxied
+    labels:
+      - "traefik.enable=true"
+      - "dns.name=public"
+      - "traefik.http.routers.public-test.service=public-test"
+      - "traefik.http.routers.public-test.middlewares=authelia@docker"
+      - "traefik.http.services.public-test.loadbalancer.server.port=80"
+      - "authelia.access_policy.public-whoami.policy=bypass"
+      
+networks:
+  proxied:
+    external: true
+    name: traefik-proxied-network

@@ -1,0 +1,211 @@
+version: '3.9'
+
+secrets:
+  authelia_jwt_secret:
+    external: true
+    name: ${AUTHELIA_JWT_SECRET_NAME:-authelia_jwt_secret}
+    x-path: &authelia_jwt_secret_path /run/secrets/authelia_jwt_secret
+  authelia_session_secret:
+    external: true
+    name: ${AUTHELIA_SESSION_SECRET_NAME:-authelia_session_secret}
+    x-path: &authelia_session_secret_path /run/secrets/authelia_session_secret
+  authelia_database_password:
+    external: true
+    name: ${AUTHELIA_DATABASE_PASSWORD_SECRET_NAME:-authelia_database_password}
+    x-path: &authelia_database_password_path /run/secrets/authelia_database_password
+  authelia_database_root_password:
+    external: true
+    name: ${AUTHELIA_DATABASE_ROOT_PASSWORD_SECRET_NAME:-authelia_database_root_password}
+    x-path: &authelia_database_root_password_path /run/secrets/authelia_database_root_password
+  authelia_storage_encryption: 
+    external: true
+    name: ${AUTHELIA_STORAGE_ENCRYPTION_SECRET_NAME:-authelia_storage_encryption}
+    x-path: &authelia_storage_encryption_path /run/secrets/authelia_storage_encryption
+
+    
+configs:
+  authelia_users:
+    external: true
+    name: ${AUTHELIA_USER_FILE_NAME}
+
+
+services:
+  authelia_db:
+    image: mariadb:10.11.2
+    networks:
+    - authelia
+    expose: 
+      - 3306
+    secrets:
+      - authelia_database_password
+      - authelia_database_root_password
+    environment:
+      MARIADB_ROOT_PASSWORD_FILE: *authelia_database_root_password_path
+      MARIADB_DATABASE: &authelia_database authelia
+      MARIADB_USER: &authelia_database_username authelia
+      MARIADB_PASSWORD_FILE: *authelia_database_password_path
+
+
+  authelia_redis:
+    image: redis:alpine3.17
+    expose: 
+      - 6379
+    networks:
+      - authelia
+    environment:
+      - TZ=${TZ}
+
+  authelia:
+    container_name: authelia
+    # image: authelia/authelia:latest
+    image: authelia/authelia:4.37
+    restart: always
+    networks:
+      - authelia
+      - proxied
+    depends_on:
+      - authelia_redis
+      - authelia_db
+      - auto_conf
+    configs: 
+      #- source: authelia_config
+      #  target: /config/configuration.yaml
+      - source: authelia_users
+        target: &authelia_user_db_location /users_database.yml
+    volumes:
+      - authelia_config:/config/:ro
+    secrets:
+      - authelia_jwt_secret
+      - authelia_session_secret
+      - authelia_database_password
+      - authelia_storage_encryption
+      # - authelia_notifier_smtp_password
+      # - authelia_duo_api_secret_key
+    command: 
+      - "authelia"
+      - "--config=/config/authelia_config.yml"
+    environment:
+      TZ: ${TZ}
+      AUTHELIA_THEME: dark
+      AUTHELIA_DEFAULT_REDIRECTION_URL: https://login.${HOST_DOMAIN}
+      #- AUTHELIA_DUO_API_SECRET_KEY_FILE=/run/secrets/authelia_duo_api_secret_key
+      AUTHELIA_LOG_LEVEL: warn
+
+      AUTHELIA_SERVER_BUFFERS_READ: 8096
+      AUTHELIA_SERVER_BUFFERS_WRITE: 8096
+            
+      AUTHELIA_TOTP_ISSUER: authelia.com'
+      AUTHELIA_TOTP_PERIOD: 30
+      AUTHELIA_TOTP_SKEW: 1
+      
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PATH: *authelia_user_db_location
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_WATCH: "true"
+
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PASSWORD_ALGORITHM: argon2
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PASSWORD_ARGON2_VARIANT: argon2id
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PASSWORD_ARGON2_ITERATIONS: 3
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PASSWORD_ARGON2_MEMORY: 65536
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PASSWORD_ARGON2_PARALLELISM: 4
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PASSWORD_ARGON2_KEY_LENGTH: 32
+      AUTHELIA_AUTHENTICATION_BACKEND_FILE_PASSWORD_ARGON2_SALT_LENGTH: 16
+      
+      AUTHELIA_JWT_SECRET_FILE: *authelia_jwt_secret_path
+
+      AUTHELIA_SESSION_NAME: authelia_session
+      AUTHELIA_SESSION_DOMAIN: ${HOST_DOMAIN}
+      AUTHELIA_SESSION_EXPIRATION: 3600
+      AUTHELIA_SESSION_INACTIVITY: 300
+      AUTHELIA_SESSION_SECRET_FILE: *authelia_session_secret_path
+
+      AUTHELIA_SESSION_REDIS_HOST: authelia_redis
+      AUTHELIA_SESSION_REDIS_PORT: 6379
+
+      AUTHELIA_REGULATION_MAX_RETRIES: 3
+      AUTHELIA_REGULATION_FIND_TIME: 120
+      AUTHELIA_REGULATION_BAN_TIME: 300
+
+      AUTHELIA_STORAGE_MYSQL_HOST: authelia_db
+      AUTHELIA_STORAGE_MYSQL_DATABASE: *authelia_database
+      AUTHELIA_STORAGE_MYSQL_USERNAME: *authelia_database_username
+      AUTHELIA_STORAGE_MYSQL_PASSWORD_FILE: *authelia_database_password_path
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: *authelia_storage_encryption_path
+
+      AUTHELIA_NOTIFIER_DISABLE_STARTUP_CHECK: "true"
+      AUTHELIA_NOTIFIER_FILESYSTEM_FILENAME: /tmp/authelia/notification.txt
+
+      AUTHELIA_TELEMETRY_METRICS_ENABLED: "false"
+    expose: 
+      - 9091
+    deploy:
+      labels:
+        - 'traefik.enable=true'
+        #- 'traefik.http.routers.authelia.middlewares=chain-authelia@file'
+        - 'dns.name=login'
+        - 'traefik.http.routers.authelia.service=authelia'
+        - 'traefik.http.services.authelia.loadbalancer.server.port=9091'
+
+        - 'traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/verify?rd=https://login.${HOST_DOMAIN}'
+        - 'traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true'
+        - 'traefik.http.middlewares.authelia.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email'
+        - 'traefik.http.middlewares.authelia.forwardauth.tls.insecureSkipVerify=false'
+
+  auto_conf_socket_proxy:
+    image: tecnativa/docker-socket-proxy
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    expose: 
+      - 2375
+    networks:
+      - auto_conf_socket_proxy
+    environment:
+      SERVICES: 1
+
+  auto_conf:
+    image: "fenaren/authelia-traefik-docker-autoconfig"
+    #volumes:
+    #  - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOCKER_HOST: "tcp://auto_conf_socket_proxy:2375"
+      DOCKER_SWARM: "true"
+      TRAEFIK_HOST: "http://networking_traefik:8080"
+    networks:
+      - auto_conf_socket_proxy
+      - traefik
+    volumes:
+      - authelia_config:/config/
+    depends_on:
+      - auto_conf_socket_proxy
+    restart: "no"
+    deploy:
+      restart_policy:
+        condition: none
+        
+volumes: 
+  authelia_config:
+
+networks:
+  traefik:
+    external: true
+    name: traefik_local
+
+  auto_conf_socket_proxy: 
+    name: auto_conf_socket_proxy
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+    attachable: false
+    internal: true
+    
+  authelia:
+    name: authelia_local
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+    attachable: false
+    internal: true
+    
+  proxied:
+    external: true
+    name: traefik-proxied-network
