@@ -1,0 +1,1 @@
+# authelia-traefik-docker-autoconfig
