@@ -56,10 +56,8 @@ services:
       - TZ=${TZ}
 
   authelia:
-    container_name: authelia
-    # image: authelia/authelia:latest
     image: authelia/authelia:4.37
-    restart: always
+    restart: unless-stopped
     networks:
       - authelia
       - proxied
@@ -68,8 +66,6 @@ services:
       - authelia_db
       - auto_conf
     configs: 
-      #- source: authelia_config
-      #  target: /config/configuration.yaml
       - source: authelia_users
         target: &authelia_user_db_location /users_database.yml
     volumes:
@@ -79,8 +75,6 @@ services:
       - authelia_session_secret
       - authelia_database_password
       - authelia_storage_encryption
-      # - authelia_notifier_smtp_password
-      # - authelia_duo_api_secret_key
     command: 
       - "authelia"
       - "--config=/config/authelia_config.yml"
@@ -88,13 +82,12 @@ services:
       TZ: ${TZ}
       AUTHELIA_THEME: dark
       AUTHELIA_DEFAULT_REDIRECTION_URL: https://login.${HOST_DOMAIN}
-      #- AUTHELIA_DUO_API_SECRET_KEY_FILE=/run/secrets/authelia_duo_api_secret_key
       AUTHELIA_LOG_LEVEL: warn
 
       AUTHELIA_SERVER_BUFFERS_READ: 8096
       AUTHELIA_SERVER_BUFFERS_WRITE: 8096
             
-      AUTHELIA_TOTP_ISSUER: authelia.com'
+      AUTHELIA_TOTP_ISSUER: authelia.com
       AUTHELIA_TOTP_PERIOD: 30
       AUTHELIA_TOTP_SKEW: 1
       
