@@ -104,7 +104,7 @@ def run(labels, TRAEFIK_HOST):
     
 
 
-def write_to_file(domain_rules, file="/tmp/authelia_config.yml"):
+def write_to_file(domain_rules, file):
     file_contents = []
     file_contents.append(CONST_ACCESS_CONTROL_STRING + ":")
     file_contents.append("".rjust(CONST_INDENT_LEN) + (CONST_RULES_STRING + ":"))
@@ -130,7 +130,8 @@ def main():
         
     ENABLE_DOCKER_SWARM = os.environ.get('DOCKER_SWARM', False)
     DOCKER_HOST = os.environ.get('DOCKER_HOST', None)
-    TRAEFIK_HOST = os.environ.get("TRAEFIK_HOST", None);
+    TRAEFIK_HOST = os.environ.get("TRAEFIK_HOST", None)
+    FILE_NAME = os.environ.get("FILE_NAME", "/out/authelia_config.yml")
     api=None
     errors=0
     while errors <=3:
@@ -155,7 +156,7 @@ def main():
         result = run(labels, TRAEFIK_HOST)
         if result is not None:
             full_config.update(result)
-    write_to_file(full_config)
+    write_to_file(full_config, FILE_NAME)
 
 
 main()
