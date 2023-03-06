@@ -139,8 +139,10 @@ def main():
             api = docker.APIClient(base_url=DOCKER_HOST)
             if api is not None:
                 break;
-        except:
+        except Exception as e:
             print("Encountered error, trying again to get docker API client...")
+            print(e)
+
             errors+=1
             time.sleep(1)
     if api is None:
