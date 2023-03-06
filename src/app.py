@@ -129,7 +129,7 @@ def write_to_file(domain_rules, file):
 def main():
         
     ENABLE_DOCKER_SWARM = os.environ.get('DOCKER_SWARM', False)
-    DOCKER_HOST = os.environ.get('DOCKER_HOST', None)
+    DOCKER_HOST = os.environ.get('DOCKER_HOST', "unix:///var/run/docker.sock")
     TRAEFIK_HOST = os.environ.get("TRAEFIK_HOST", None)
     FILE_NAME = os.environ.get("FILE_NAME", "authelia_config.yml")
     api=None
@@ -156,7 +156,7 @@ def main():
         result = run(labels, TRAEFIK_HOST)
         if result is not None:
             full_config.update(result)
-    write_to_file(full_config, "/config/"+FILE_NAME)
+    write_to_file(full_config, "/generated_config/"+FILE_NAME)
 
 
 main()
