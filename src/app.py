@@ -26,6 +26,8 @@ CONST_RULES_STRING="rules"
 # formatting
 CONST_INDENT_LEN=2
 
+CONST_DOMAIN_STRING_PATTERN="[\w*|.]*"
+
 # --authelia.access_policy.[name].domain= auto-genned
 # --authelia.access_policy.[name].domain_regex
 
@@ -40,20 +42,24 @@ import os
 import docker
 import time
 import requests
+import re
 
- 
 def query_traefik_router_domain(TRAEFIK_HOST, traefik_router):
-    if TRAEFIK_HOST is not None:
-        url = TRAEFIK_HOST+"/api/http/routers/" + traefik_router + "@docker"
-        print("Trying to get details from traefik: ", url)
-        response = requests.get(url)
-        if response.status_code == 200:
-            json = response.json()
-            if CONST_RULE_STRING in json:
-                host = json[CONST_RULE_STRING]
-                url = host.replace('Host(`', "").replace('`)', "")
-                print(url)
-                return url
+    
+    url = TRAEFIK_HOST+"/api/http/routers/" + traefik_router + "@docker"
+    print("Trying to get details from traefik: ", url)
+    response = requests.get(url)
+    if response.status_code == 200:
+        json = response.json()
+        if CONST_RULE_STRING in json:
+            rule = json[CONST_RULE_STRING]
+            print("Reading rule:", rule)
+
+            host = re.compile("Host\(."+CONST_DOMAIN_STRING_PATTERN+".\)").match(rule)
+            domain = re.compile(CONST_DOMAIN_STRING_PATTERN).match(host)                
+            
+            print("Converted rule to domain:", domain)
+            return domain
     return None
 
 def run(labels, TRAEFIK_HOST):
@@ -96,9 +102,10 @@ def run(labels, TRAEFIK_HOST):
     for grouping in groupings.values(): 
         if CONST_DOMAIN_STRING not in grouping:
             grouping[CONST_DOMAIN_STRING] = "";
-            result = query_traefik_router_domain(TRAEFIK_HOST, traefik_router)
-            if result is not None: 
-                grouping[CONST_DOMAIN_STRING] = result;
+            if TRAEFIK_HOST is not None:
+                result = query_traefik_router_domain(TRAEFIK_HOST, traefik_router)
+                if result is not None: 
+                    grouping[CONST_DOMAIN_STRING] = result;
 
     return groupings
     
