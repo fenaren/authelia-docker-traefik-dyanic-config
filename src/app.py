@@ -26,7 +26,6 @@ CONST_RULES_STRING="rules"
 # formatting
 CONST_INDENT_LEN=2
 
-CONST_DOMAIN_STRING_PATTERN="[\w*|.]*"
 
 # --authelia.access_policy.[name].domain= auto-genned
 # --authelia.access_policy.[name].domain_regex
@@ -54,10 +53,10 @@ def query_traefik_router_domain(TRAEFIK_HOST, traefik_router):
         if CONST_RULE_STRING in json:
             rule = json[CONST_RULE_STRING]
             print("Reading rule:", rule)
-            host = re.compile("Host\(."+CONST_DOMAIN_STRING_PATTERN+".\)").findall(rule)[0]
+            host = re.compile("Host\(.[\w*|.]*.\)").findall(rule)[0]
             print("Got Host string from traefik:", host)
-            domain = re.compile(CONST_DOMAIN_STRING_PATTERN).findall(host)[0]
-
+            
+            domain = host.replace('Host(', "")[1:-2]
             print("Converted rule to domain:", domain)
             return domain
     return None
