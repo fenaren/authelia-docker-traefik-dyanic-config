@@ -54,8 +54,8 @@ def query_traefik_router_domain(TRAEFIK_HOST, traefik_router):
         if CONST_RULE_STRING in json:
             rule = json[CONST_RULE_STRING]
             print("Reading rule:", rule)
-
             host = re.compile("Host\(."+CONST_DOMAIN_STRING_PATTERN+".\)").match(rule)
+            print("Got Host string from traefik:", host)
             domain = re.compile(CONST_DOMAIN_STRING_PATTERN).match(host)                
             
             print("Converted rule to domain:", domain)
