@@ -14,15 +14,18 @@ CONST_TRAEFIK_ROUTER_STRING="traefik_router"
 # traefik string consts to read from labels and traefik api
 CONST_RULE_STRING="rule"
 
-# file write constants
 CONST_ACCESS_CONTROL_STRING="access_control"
+CONST_IDENTITY_PROVIDERS_STRING="identity_providers"
+CONST_OIDC_STRING = "oidc"
+CONST_CLIENTS_STRING = "clients"
+
 
 # TODO also return host regex rules too
 # queries traefik api for a router and returns a host domain (if able)
 def query_traefik_router_domain(TRAEFIK_HOST:str, traefik_router_name:str):
     if TRAEFIK_HOST is None: 
         return None
-    url = (TRAEFIK_HOST if "http" in TRAEFIK_HOST else "http://" + TRAEFIK_HOST)+":8080" +"/api/http/routers/" + traefik_router_name + "@docker"
+    url = (TRAEFIK_HOST if "http" in TRAEFIK_HOST else "http://" + TRAEFIK_HOST) + "/api/http/routers/" + traefik_router_name + "@docker"
     print("Trying to get details from traefik: ", url)
     response = requests.get(url)
     if response.status_code == 200:
@@ -115,6 +118,13 @@ def recurse(current_data_structure, label_parts, label_value:str, label_part_ind
         current_data_structure[label_name] = label_value
         return current_data_structure
 
+def get_inner_dict(outer_data_structure, label_parts, depth, start=0, final={}):
+    current_data_structure = outer_data_structure
+    for i in range(start, depth):
+        grouping_inner = current_data_structure.get(label_parts[i], final if i == depth -1 else {})
+        current_data_structure[label_parts[i]] = grouping_inner
+        current_data_structure = grouping_inner
+    return current_data_structure
 
 # process label array, converting all labels into a pythonic data structure 
 def process_labels(labels):
@@ -122,20 +132,28 @@ def process_labels(labels):
     for label_name, label_value in labels.items(): #iterate label ITEMS (gets K,V pair)
         label_parts = label_name.lower().split(".") #split into array 
         if label_parts[0] == CONST_AUTHELIA_STRING:  # check if relevant / filter #TODO should check before split?
-            label_name, label_array_index = extract_array_from_string(label_parts[2])
+            __name_index = 0
+            if label_parts[1] == CONST_ACCESS_CONTROL_STRING:
+                __name_index = 2
+            elif label_parts[1] == CONST_IDENTITY_PROVIDERS_STRING and label_parts[2] == CONST_OIDC_STRING and label_parts[3] == CONST_CLIENTS_STRING:
+                __name_index = 4
+            label_name, label_array_index = extract_array_from_string(label_parts[__name_index])
+            
+            grouping_p1 = get_inner_dict(grouping, label_parts, __name_index, start=1, final={})
             if label_array_index != -1:
                 # if array, merge to array of existing
-                next_structure = array(grouping, label_name, label_array_index)
+                next_structure = array(grouping_p1, label_name, label_array_index)
                 inner_structure = {} if next_structure[label_array_index] is None else next_structure[label_array_index]
-                result = recurse(inner_structure, label_parts, label_value, 3)
+                result = recurse(inner_structure, label_parts, label_value, __name_index + 1)
                 next_structure[label_array_index] = result
-                grouping[label_name] = next_structure
+                grouping_p1[label_name] = next_structure
             else:
                 # if not array, merge to existing
-                result = recurse({}, label_parts, label_value, 3)
-                inner = grouping.get(label_parts[2], {})
-                grouping[label_parts[2]] = inner
+                result = recurse({}, label_parts, label_value, __name_index + 1)
+                inner = grouping_p1.get(label_name, {})
+                grouping_p1[label_name] = inner
                 inner.update(result)
+    print(grouping)
     return grouping
 
 
@@ -152,16 +170,30 @@ def post_process_single(TRAEFIK_HOST, entry):
 
 # clean up all the entries for writing to file
 def post_process(TRAEFIK_HOST:str, groupings):
-    file_yaml = []
+    file_yaml = {}
     for grouping_name,grouping_value in groupings.items():
-        if isinstance(grouping_value, list):
-            for entry in grouping_value:
-                post_process_single(TRAEFIK_HOST, entry)
-                file_yaml.append(entry)
-        else:
-            post_process_single(TRAEFIK_HOST, grouping_value)
-            file_yaml.append(grouping_value)
-    return {CONST_ACCESS_CONTROL_STRING: file_yaml}
+        print(grouping_name)
+        file_yaml_inner = None
+        iteratable = None
+        if grouping_name == CONST_IDENTITY_PROVIDERS_STRING and CONST_OIDC_STRING in grouping_value and CONST_CLIENTS_STRING in grouping_value[CONST_OIDC_STRING]:
+            file_yaml_inner = get_inner_dict(file_yaml, [CONST_IDENTITY_PROVIDERS_STRING, CONST_OIDC_STRING, CONST_CLIENTS_STRING], 3, start=0,final=[])
+            iteratable = grouping_value[CONST_OIDC_STRING][CONST_CLIENTS_STRING].values()
+            
+        elif grouping_name == CONST_ACCESS_CONTROL_STRING:
+            file_yaml_inner = file_yaml.get(grouping_name, [])
+            file_yaml[grouping_name] = file_yaml_inner
+            iteratable = grouping_value.values()
+        if file_yaml_inner is not None and iteratable is not None:
+            for grouping_inner_value in iteratable:
+                    if isinstance(grouping_inner_value, list):
+                        for entry in grouping_inner_value:
+                            post_process_single(TRAEFIK_HOST, entry)
+                            file_yaml_inner.append(entry)
+                    else:
+                        post_process_single(TRAEFIK_HOST, grouping_inner_value)
+                        file_yaml_inner.append(grouping_inner_value)
+    print(file_yaml)
+    return file_yaml
 
 
 # writes the pythonic data structure to yaml file
@@ -174,6 +206,15 @@ def write_to_file(file_path, rules):
     with open(file_path, "r") as _file:
         print(_file.read())
 
+def deep_merge(original, update):
+    for key in original.keys():
+        if key not in update:
+            update[key] = original[key]
+        elif key in update and isinstance(update[key], dict):
+            deep_merge(original[key], update[key])
+        else:
+            update[key].update(original[key])
+
 
 # gets all the envvars, gets the labels and writes all to file
 def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), ENABLE_DOCKER_SWARM = os.getenv('DOCKER_SWARM', False), TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None), FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml")):
@@ -184,7 +225,8 @@ def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), E
         labels = container["Spec"]["Labels"] if ENABLE_DOCKER_SWARM else container["Labels"]
         result = process_labels(labels)
         if result is not None:
-            groupings.update(result)
+            deep_merge(result, groupings)
+            print(groupings)
     full_config = post_process(TRAEFIK_HOST, groupings)
     os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
     write_to_file(FILE_PATH, full_config)
