@@ -22,7 +22,7 @@ CONST_ACCESS_CONTROL_STRING="access_control"
 def query_traefik_router_domain(TRAEFIK_HOST:str, traefik_router_name:str):
     if TRAEFIK_HOST is None: 
         return None
-    url = (TRAEFIK_HOST if "http" in TRAEFIK_HOST else "http://" + TRAEFIK_HOST)+":8080" +"/api/http/routers/" + traefik_router_name + "@docker"
+    url = (TRAEFIK_HOST if "http" in TRAEFIK_HOST else "http://" + TRAEFIK_HOST) + "/api/http/routers/" + traefik_router_name + "@docker"
     print("Trying to get details from traefik: ", url)
     response = requests.get(url)
     if response.status_code == 200:
