@@ -3,14 +3,13 @@ name: Docker
 on:
   push:
     branches: [ "main" ]
-    #tags: [ 'v*.*.*' ]
+    tags: [ 'v*.*.*' ]
     paths: [src/**]
   workflow_dispatch:
 
 env:
   # github.repository as <account>/<repo>
-  IMAGE_NAME: fenaren/authelia-traefik-docker-autoconfig
-  IMAGE_TAG: 1.0.${{ github.run_number }}
+  IMAGE_NAME: fenaren/authelia-docker-traefik-dyanic-config
 
 jobs:
   build:
@@ -60,13 +59,10 @@ jobs:
           flavor: |
             latest=true
           tags: |
-            type=schedule
             type=ref,event=branch
-            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
