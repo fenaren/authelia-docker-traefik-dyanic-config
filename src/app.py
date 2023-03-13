@@ -5,31 +5,17 @@ import re
 # authelia string consts to read from labels
 CONST_AUTHELIA_STRING="authelia"
 
-CONST_ACCESS_POLICY_STRING="access_policy"
-
 CONST_DOMAIN_STRING="domain"
 CONST_DOMAIN_REGEX_STRING="domain_regex"
-CONST_QUERY_STRING="query"
-CONST_DETECT_STRING="detect"
-CONST_PRIORITY_STRING="priority"
 
-# authelia policy options restrictions
-CONST_POLICY_OPTIONS=["bypass", "one_factor", "two_factor"]
-CONST_AUTHORIZATION_POLICY_OPTIONS=[CONST_POLICY_OPTIONS[1], CONST_POLICY_OPTIONS[2]]
-CONST_CONSENT_MODE_OPTIONS=["auto", "explicit", "implicit", "pre-configured"]
+# optional definition for traefik support 
+CONST_TRAEFIK_ROUTER_STRING="traefik_router"
 
 # traefik string consts to read from labels and traefik api
-CONST_TRAEFIK_ROUTER_STRING="traefik_router"
-CONST_HTTP_STRING="http"
-CONST_ROUTERS_STRING="routers"
 CONST_RULE_STRING="rule"
 
 # file write constants
 CONST_ACCESS_CONTROL_STRING="access_control"
-CONST_RULES_STRING="rules"
-
-# formatting
-CONST_INDENT_LEN=2
 
 
 def query_traefik_router_domain(TRAEFIK_HOST:str, traefik_router_name:str):
@@ -176,7 +162,7 @@ def write_to_file(file_path, rules):
         print(_file.read())
 
 
-def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), ENABLE_DOCKER_SWARM = os.getenv('DOCKER_SWARM', False), TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None), FILE_PATH = os.getenv("FILE_PATH", "/config/authelia_config.yml")):
+def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), ENABLE_DOCKER_SWARM = os.getenv('DOCKER_SWARM', False), TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None), FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml")):
     api = get_docker_api(DOCKER_HOST)
     groupings = {}
     list_of_containers_or_services = api.services() if ENABLE_DOCKER_SWARM else api.containers()
@@ -185,13 +171,9 @@ def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), E
         result = process_labels(labels)
         if result is not None:
             groupings.update(result)
-    print(groupings)
-    print()
     full_config = post_process(TRAEFIK_HOST, groupings)
     os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
     write_to_file(FILE_PATH, full_config)
-    #print()
-    #return full_config
 
 
 main()
