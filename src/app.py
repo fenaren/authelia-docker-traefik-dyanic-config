@@ -126,6 +126,7 @@ def get_inner_dict(outer_data_structure, label_parts, depth, start=0, final={}):
         current_data_structure = grouping_inner
     return current_data_structure
 
+
 # process label array, converting all labels into a pythonic data structure 
 def process_labels(labels):
     grouping = {}
@@ -138,7 +139,6 @@ def process_labels(labels):
             elif label_parts[1] == CONST_IDENTITY_PROVIDERS_STRING and label_parts[2] == CONST_OIDC_STRING and label_parts[3] == CONST_CLIENTS_STRING:
                 __name_index = 4
             label_name, label_array_index = extract_array_from_string(label_parts[__name_index])
-            
             grouping_p1 = get_inner_dict(grouping, label_parts, __name_index, start=1, final={})
             if label_array_index != -1:
                 # if array, merge to array of existing
@@ -149,11 +149,9 @@ def process_labels(labels):
                 grouping_p1[label_name] = next_structure
             else:
                 # if not array, merge to existing
-                result = recurse({}, label_parts, label_value, __name_index + 1)
                 inner = grouping_p1.get(label_name, {})
+                result = recurse(inner, label_parts, label_value, __name_index + 1)
                 grouping_p1[label_name] = inner
-                inner.update(result)
-    print(grouping)
     return grouping
 
 
@@ -172,13 +170,11 @@ def post_process_single(TRAEFIK_HOST, entry):
 def post_process(TRAEFIK_HOST:str, groupings):
     file_yaml = {}
     for grouping_name,grouping_value in groupings.items():
-        print(grouping_name)
         file_yaml_inner = None
         iteratable = None
         if grouping_name == CONST_IDENTITY_PROVIDERS_STRING and CONST_OIDC_STRING in grouping_value and CONST_CLIENTS_STRING in grouping_value[CONST_OIDC_STRING]:
             file_yaml_inner = get_inner_dict(file_yaml, [CONST_IDENTITY_PROVIDERS_STRING, CONST_OIDC_STRING, CONST_CLIENTS_STRING], 3, start=0,final=[])
             iteratable = grouping_value[CONST_OIDC_STRING][CONST_CLIENTS_STRING].values()
-            
         elif grouping_name == CONST_ACCESS_CONTROL_STRING:
             file_yaml_inner = file_yaml.get(grouping_name, [])
             file_yaml[grouping_name] = file_yaml_inner
@@ -192,7 +188,6 @@ def post_process(TRAEFIK_HOST:str, groupings):
                     else:
                         post_process_single(TRAEFIK_HOST, grouping_inner_value)
                         file_yaml_inner.append(grouping_inner_value)
-    print(file_yaml)
     return file_yaml
 
 
@@ -205,6 +200,7 @@ def write_to_file(file_path, rules):
     print()
     with open(file_path, "r") as _file:
         print(_file.read())
+
 
 def deep_merge(original, update):
     for key in original.keys():
@@ -226,7 +222,6 @@ def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), E
         result = process_labels(labels)
         if result is not None:
             deep_merge(result, groupings)
-            print(groupings)
     full_config = post_process(TRAEFIK_HOST, groupings)
     os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
     write_to_file(FILE_PATH, full_config)
