@@ -1,20 +1,25 @@
+import os
+import docker
+import requests
+import re
 # authelia string consts to read from labels
 CONST_AUTHELIA_STRING="authelia"
+
 CONST_ACCESS_POLICY_STRING="access_policy"
 
 CONST_DOMAIN_STRING="domain"
-CONST_POLICY_STRING="policy"
-CONST_SUBJECT_STRING="subject"
-CONST_METHODS_STRING="methods"
-CONST_NETWORKSS_STRING="networks"
-CONST_RESOURCESS_STRING="resources"
+CONST_DOMAIN_REGEX_STRING="domain_regex"
 CONST_QUERY_STRING="query"
+CONST_DETECT_STRING="detect"
+CONST_PRIORITY_STRING="priority"
 
 # authelia policy options restrictions
 CONST_POLICY_OPTIONS=["bypass", "one_factor", "two_factor"]
+CONST_AUTHORIZATION_POLICY_OPTIONS=[CONST_POLICY_OPTIONS[1], CONST_POLICY_OPTIONS[2]]
+CONST_CONSENT_MODE_OPTIONS=["auto", "explicit", "implicit", "pre-configured"]
 
 # traefik string consts to read from labels and traefik api
-CONST_TRAEFIK_STRING="traefik"
+CONST_TRAEFIK_ROUTER_STRING="traefik_router"
 CONST_HTTP_STRING="http"
 CONST_ROUTERS_STRING="routers"
 CONST_RULE_STRING="rule"
@@ -27,25 +32,10 @@ CONST_RULES_STRING="rules"
 CONST_INDENT_LEN=2
 
 
-# --authelia.access_policy.[name].domain= auto-genned
-# --authelia.access_policy.[name].domain_regex
-
-# --authelia.access_policy.[name].policy=bypass|one_factor|two_factor
-# --authelia.access_policy.[name].subject # defined zero to multiple "" or ["",""]
-# --authelia.access_policy.[name].methods=
-# --authelia.access_policy.[name].networks
-# --authelia.access_policy.[name].resources
-# --authelia.access_policy.[name].query
-
-import os
-import docker
-import time
-import requests
-import re
-
-def query_traefik_router_domain(TRAEFIK_HOST, traefik_router):
-    
-    url = TRAEFIK_HOST+"/api/http/routers/" + traefik_router + "@docker"
+def query_traefik_router_domain(TRAEFIK_HOST:str, traefik_router_name:str):
+    if TRAEFIK_HOST is None: 
+        return None
+    url = (TRAEFIK_HOST if "http" in TRAEFIK_HOST else "http://" + TRAEFIK_HOST)+":8080" +"/api/http/routers/" + traefik_router_name + "@docker"
     print("Trying to get details from traefik: ", url)
     response = requests.get(url)
     if response.status_code == 200:
@@ -59,85 +49,13 @@ def query_traefik_router_domain(TRAEFIK_HOST, traefik_router):
             domain = host.replace('Host(', "")[1:-2]
             print("Converted rule to domain:", domain)
             return domain
+    else:
+        print("Error: Response was not 200 (OK)", response)
     return None
 
-def run(labels, TRAEFIK_HOST):
 
-    traefik_router = None
-
-    groupings = {}
-    for _label_name,label_value in labels.items():
-        label_parts = _label_name.lower().split(".")
-        if label_parts[0] == CONST_TRAEFIK_STRING and label_parts[1] == CONST_HTTP_STRING and label_parts[2] == CONST_ROUTERS_STRING:
-            traefik_router = label_parts[3]
-
-        if label_parts[0] == CONST_AUTHELIA_STRING and label_parts[1] == CONST_ACCESS_POLICY_STRING:
-            current_group = groupings.get(label_parts[2], {})
-
-            if label_parts[3] == CONST_DOMAIN_STRING:
-                current_group[CONST_DOMAIN_STRING] = label_value
-            if label_parts[3] == CONST_POLICY_STRING:
-                if label_value in CONST_POLICY_OPTIONS:
-                    current_group[CONST_POLICY_STRING] = label_value
-
-            elif label_parts[3] == CONST_SUBJECT_STRING:
-                if CONST_SUBJECT_STRING not in current_group:
-                    groupings[label_parts[2]][CONST_SUBJECT_STRING] = []
-                current_group[CONST_SUBJECT_STRING].append(label_value)
-            #elif label_parts[2].startswith(CONST_METHODS_STRING):
-            #    methods.append(label_value)
-            #elif label_parts[2].startswith(CONST_NETWORKSS_STRING):
-            #    networks.append(label_value)
-            #elif label_parts[2].startswith(CONST_RESOURCESS_STRING):
-            #    resources.append(label_value)
-            #elif label_parts[2].startswith(CONST_QUERY_STRING):
-            #    query.append(label_value)
-            else:
-                print(label_parts[3], "is not a valid option (yet)")
-
-            groupings[label_parts[2]] = current_group
-    
-    
-    for grouping in groupings.values(): 
-        if CONST_DOMAIN_STRING not in grouping:
-            grouping[CONST_DOMAIN_STRING] = "";
-            if TRAEFIK_HOST is not None:
-                result = query_traefik_router_domain(TRAEFIK_HOST, traefik_router)
-                if result is not None: 
-                    grouping[CONST_DOMAIN_STRING] = result;
-
-    return groupings
-    
-
-
-def write_to_file(domain_rules, file):
-    file_contents = []
-    file_contents.append(CONST_ACCESS_CONTROL_STRING + ":")
-    file_contents.append("".rjust(CONST_INDENT_LEN) + (CONST_RULES_STRING + ":"))
-    for group_name,rules in domain_rules.items():
-        
-        file_contents.append("".rjust((CONST_INDENT_LEN * 3) - 2) + ("# " + group_name))
-        file_contents.append("".rjust((CONST_INDENT_LEN * 3) - 2) + ("- " + CONST_DOMAIN_STRING + ": " + "\"" + rules[CONST_DOMAIN_STRING] + "\""))
-        file_contents.append("".rjust( CONST_INDENT_LEN * 3     ) + (CONST_POLICY_STRING + ": " + rules[CONST_POLICY_STRING]))
-
-        if CONST_SUBJECT_STRING in rules and rules[CONST_SUBJECT_STRING]:            
-            file_contents.append("".rjust(CONST_INDENT_LEN * 3) + (CONST_SUBJECT_STRING + ":"))
-            for subject in rules[CONST_SUBJECT_STRING]: 
-                file_contents.append("".rjust(CONST_INDENT_LEN * 3) + ("- " + subject))
-                
-    with open(file, "w") as _file:
-        for line in file_contents:
-            _file.write(line+"\r\n")
-    print("Final Config: ")
-    with open(file, "r") as _file:
-        print(_file.read())
-
-def main():
-        
-    ENABLE_DOCKER_SWARM = os.environ.get('DOCKER_SWARM', False)
-    DOCKER_HOST = os.environ.get('DOCKER_HOST', "unix://var/run/docker.sock")
-    TRAEFIK_HOST = os.environ.get("TRAEFIK_HOST", None)
-    FILE_NAME = os.environ.get("FILE_NAME", "authelia_config.yml")
+def get_docker_api(DOCKER_HOST):
+    import time
     api=None
     errors=0
     while errors <=3:
@@ -148,23 +66,132 @@ def main():
         except Exception as e:
             print("Encountered error, trying again to get docker API client...")
             print(e)
-
             errors+=1
             time.sleep(1)
     if api is None:
         print("Tried and failed to reach the docker API client after 4 tries. Cannot continue.")
         exit(1)
+    return api
 
-    print("Starting...")
 
-    full_config={}
+def extract_array_from_string(string_to_check:str):
+    array_check = re.search("(?P<label>(:.|[^\.])*)\[(?P<index>\d+)\]$", string_to_check)
+    if array_check is not None:
+        # has an array
+        label_part_without_array = array_check.group("label")
+        label_part_index = (int)(array_check.group("index"))
+        return label_part_without_array, label_part_index
+    return  string_to_check, -1
+
+
+def array(current_data_structure, name:str, index:int):
+    # tries to get an existing array from 'current_data_structure'
+    # if that array doesnt exist, create one of index size
+    next_structure = current_data_structure.get(name, [None] * (index + 1))
+    # if that array is smaller than index, append until meets size
+    if len(next_structure) <= index:
+        next_structure.extend([None] * (index + 1 - len(next_structure)))
+    return next_structure
+
+
+def recurse(current_data_structure, label_parts, label_value:str, label_part_index:int = 0):
+    # check if current label_part has an array identifier    
+    label_name, label_array_index = extract_array_from_string(label_parts[label_part_index])
+    if label_array_index != -1:
+        next_structure = array(current_data_structure, label_name, label_array_index)
+        if len(label_parts) > label_part_index + 1:
+            inner_structure = {} if next_structure[label_array_index] is None else next_structure[label_array_index]
+            result = recurse(inner_structure, label_parts, label_value, label_part_index + 1)
+            next_structure[label_array_index] = result
+            current_data_structure[label_name] = next_structure
+            return current_data_structure
+        else:
+            next_structure[label_array_index] = label_value
+            current_data_structure[label_name] = next_structure
+            return current_data_structure
+    # check if last element
+    elif len(label_parts) > label_part_index + 1:
+        # not last element
+        # next data structure is dict
+        next_structure = current_data_structure.get(label_name, {})
+        result = recurse(next_structure, label_parts, label_value, label_part_index + 1)
+        current_data_structure[label_name] = result
+        return current_data_structure
+    else:
+        # last element
+        current_data_structure[label_name] = label_value
+        return current_data_structure
+
+    
+def process_labels(labels):
+    grouping = {}
+    for label_name, label_value in labels.items(): #iterate label ITEMS (gets K,V pair)
+        label_parts = label_name.lower().split(".") #split into array 
+        if label_parts[0] == CONST_AUTHELIA_STRING:  # check if relevant / filter #TODO should check before split?
+            label_name, label_array_index = extract_array_from_string(label_parts[2])
+            if label_array_index != -1:
+                next_structure = array(grouping, label_name, label_array_index)
+                inner_structure = {} if next_structure[label_array_index] is None else next_structure[label_array_index]
+                result = recurse(inner_structure, label_parts, label_value, 3)
+                next_structure[label_array_index] = result
+                grouping[label_name] = next_structure
+            else:
+                # if not array, just set it 
+                result = recurse({}, label_parts, label_value, 3)
+                inner = grouping.get(label_parts[2], {})
+                grouping[label_parts[2]] = inner
+                inner.update(result)
+    return grouping
+
+
+def post_process_single(TRAEFIK_HOST, entry):
+    if CONST_DOMAIN_STRING in entry and CONST_TRAEFIK_ROUTER_STRING in entry[CONST_DOMAIN_STRING]:
+        traefik_router_name = entry[CONST_DOMAIN_STRING][CONST_TRAEFIK_ROUTER_STRING]
+        domain = query_traefik_router_domain(TRAEFIK_HOST, traefik_router_name)
+        entry[CONST_DOMAIN_STRING] = ""
+        if domain is not None:
+            entry[CONST_DOMAIN_STRING] = domain
+
+
+def post_process(TRAEFIK_HOST:str, groupings):
+    file_yaml = []
+    for grouping_name,grouping_value in groupings.items():
+        if isinstance(grouping_value, list):
+            for entry in grouping_value:
+                post_process_single(TRAEFIK_HOST, entry)
+                file_yaml.append(entry)
+        else:
+            post_process_single(TRAEFIK_HOST, grouping_value)
+            file_yaml.append(grouping_value)
+    return {CONST_ACCESS_CONTROL_STRING: file_yaml}
+
+
+def write_to_file(file_path, rules):
+    import yaml
+    with open(file_path, "w") as _file:
+        _file.write(yaml.dump(rules))
+    print("Final Config: ")
+    print()
+    with open(file_path, "r") as _file:
+        print(_file.read())
+
+
+def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), ENABLE_DOCKER_SWARM = os.getenv('DOCKER_SWARM', False), TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None), FILE_PATH = os.getenv("FILE_PATH", "/config/authelia_config.yml")):
+    api = get_docker_api(DOCKER_HOST)
+    groupings = {}
     list_of_containers_or_services = api.services() if ENABLE_DOCKER_SWARM else api.containers()
     for container in list_of_containers_or_services:
         labels = container["Spec"]["Labels"] if ENABLE_DOCKER_SWARM else container["Labels"]
-        result = run(labels, TRAEFIK_HOST)
+        result = process_labels(labels)
         if result is not None:
-            full_config.update(result)
-    write_to_file(full_config, "/generated_config/"+FILE_NAME)
+            groupings.update(result)
+    print(groupings)
+    print()
+    full_config = post_process(TRAEFIK_HOST, groupings)
+    os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
+    write_to_file(FILE_PATH, full_config)
+    #print()
+    #return full_config
 
 
 main()
