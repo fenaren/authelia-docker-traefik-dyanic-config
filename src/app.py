@@ -17,7 +17,8 @@ CONST_RULE_STRING="rule"
 # file write constants
 CONST_ACCESS_CONTROL_STRING="access_control"
 
-
+# TODO also return host regex rules too
+# queries traefik api for a router and returns a host domain (if able)
 def query_traefik_router_domain(TRAEFIK_HOST:str, traefik_router_name:str):
     if TRAEFIK_HOST is None: 
         return None
@@ -39,7 +40,7 @@ def query_traefik_router_domain(TRAEFIK_HOST:str, traefik_router_name:str):
         print("Error: Response was not 200 (OK)", response)
     return None
 
-
+# retrieve the docker api, try 4 times with timeouts, if fail exit
 def get_docker_api(DOCKER_HOST):
     import time
     api=None
@@ -60,6 +61,10 @@ def get_docker_api(DOCKER_HOST):
     return api
 
 
+# Splits a string into two parts, first the name, second the array index
+# eg 
+#   test -> test,-1
+#   test[4] -> test,4
 def extract_array_from_string(string_to_check:str):
     array_check = re.search("(?P<label>(:.|[^\.])*)\[(?P<index>\d+)\]$", string_to_check)
     if array_check is not None:
@@ -70,6 +75,7 @@ def extract_array_from_string(string_to_check:str):
     return  string_to_check, -1
 
 
+# needed to write this so that array indicies always stayed the same, unlike how .append would
 def array(current_data_structure, name:str, index:int):
     # tries to get an existing array from 'current_data_structure'
     # if that array doesnt exist, create one of index size
@@ -80,6 +86,7 @@ def array(current_data_structure, name:str, index:int):
     return next_structure
 
 
+# iterate through the parts of the label and extract the data
 def recurse(current_data_structure, label_parts, label_value:str, label_part_index:int = 0):
     # check if current label_part has an array identifier    
     label_name, label_array_index = extract_array_from_string(label_parts[label_part_index])
@@ -108,7 +115,8 @@ def recurse(current_data_structure, label_parts, label_value:str, label_part_ind
         current_data_structure[label_name] = label_value
         return current_data_structure
 
-    
+
+# process label array, converting all labels into a pythonic data structure 
 def process_labels(labels):
     grouping = {}
     for label_name, label_value in labels.items(): #iterate label ITEMS (gets K,V pair)
@@ -116,13 +124,14 @@ def process_labels(labels):
         if label_parts[0] == CONST_AUTHELIA_STRING:  # check if relevant / filter #TODO should check before split?
             label_name, label_array_index = extract_array_from_string(label_parts[2])
             if label_array_index != -1:
+                # if array, merge to array of existing
                 next_structure = array(grouping, label_name, label_array_index)
                 inner_structure = {} if next_structure[label_array_index] is None else next_structure[label_array_index]
                 result = recurse(inner_structure, label_parts, label_value, 3)
                 next_structure[label_array_index] = result
                 grouping[label_name] = next_structure
             else:
-                # if not array, just set it 
+                # if not array, merge to existing
                 result = recurse({}, label_parts, label_value, 3)
                 inner = grouping.get(label_parts[2], {})
                 grouping[label_parts[2]] = inner
@@ -130,7 +139,9 @@ def process_labels(labels):
     return grouping
 
 
+# per entry, clean up the data for writing to file
 def post_process_single(TRAEFIK_HOST, entry):
+    # use traefik to find domain name 
     if CONST_DOMAIN_STRING in entry and CONST_TRAEFIK_ROUTER_STRING in entry[CONST_DOMAIN_STRING]:
         traefik_router_name = entry[CONST_DOMAIN_STRING][CONST_TRAEFIK_ROUTER_STRING]
         domain = query_traefik_router_domain(TRAEFIK_HOST, traefik_router_name)
@@ -139,6 +150,7 @@ def post_process_single(TRAEFIK_HOST, entry):
             entry[CONST_DOMAIN_STRING] = domain
 
 
+# clean up all the entries for writing to file
 def post_process(TRAEFIK_HOST:str, groupings):
     file_yaml = []
     for grouping_name,grouping_value in groupings.items():
@@ -152,6 +164,7 @@ def post_process(TRAEFIK_HOST:str, groupings):
     return {CONST_ACCESS_CONTROL_STRING: file_yaml}
 
 
+# writes the pythonic data structure to yaml file
 def write_to_file(file_path, rules):
     import yaml
     with open(file_path, "w") as _file:
@@ -162,6 +175,7 @@ def write_to_file(file_path, rules):
         print(_file.read())
 
 
+# gets all the envvars, gets the labels and writes all to file
 def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), ENABLE_DOCKER_SWARM = os.getenv('DOCKER_SWARM', False), TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None), FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml")):
     api = get_docker_api(DOCKER_HOST)
     groupings = {}
