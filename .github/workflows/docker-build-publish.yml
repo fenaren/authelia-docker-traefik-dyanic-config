@@ -2,9 +2,7 @@ name: Docker
 
 on:
   push:
-    branches: [ "main" ]
     tags: [ 'v*.*.*' ]
-    paths: [src/**]
   workflow_dispatch:
 
 env:
@@ -59,7 +57,6 @@ jobs:
           flavor: |
             latest=true
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
