@@ -209,7 +209,7 @@ def post_process_all(groupings:dict, CORS_ENDPOINTS:list, CORS_ALLOWED_ORIGINS:l
 def write_to_file(file_path:str, rules:dict):
     with open(file_path, "w") as _file:
         _file.write(yaml.dump(rules))
-    print("Final Config: ")
+    print("Final Config:", file_path)
     print()
     with open(file_path, "r") as _file:
         print(_file.read())
