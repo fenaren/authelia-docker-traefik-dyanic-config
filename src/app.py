@@ -63,7 +63,6 @@ def get_docker_api(DOCKER_HOST:str):
             time.sleep(1)
     if api is None:
         print("Tried and failed to reach the docker API client after 4 tries. Cannot continue.")
-        exit(1)
     return api
 
 
@@ -207,6 +206,7 @@ def post_process_all(groupings:dict, CORS_ENDPOINTS:list, CORS_ALLOWED_ORIGINS:l
 
 # writes the pythonic data structure to yaml file
 def write_to_file(file_path:str, rules:dict):
+    print("Written to file", file_path)
     with open(file_path, "w") as _file:
         _file.write(yaml.dump(rules))
     print("Final Config: ")
@@ -238,6 +238,8 @@ def main(
         CORS_ENDPOINTS = os.getenv("ENDPOINTS", "authorization,token,revocation,introspection,userinfo")
         ):
     api = get_docker_api(DOCKER_HOST)
+    if api is None:
+        return
     groupings = {}
     list_of_containers_or_services = api.services() if DOCKER_SWARM else api.containers()
     for container in list_of_containers_or_services:
