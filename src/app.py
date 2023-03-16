@@ -228,15 +228,14 @@ def deep_merge(original:dict, update:dict):
 
 
 # gets all the envvars, gets the labels and writes all to file
-def main(
-        DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"),
-        DOCKER_SWARM = (bool) (os.getenv('DOCKER_SWARM', False)),
-        TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None),
-        FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml"),
-        CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*"),
-        CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS = (bool) (os.getenv("ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS", "false")),
-        CORS_ENDPOINTS = os.getenv("ENDPOINTS", "authorization,token,revocation,introspection,userinfo")
-        ):
+def main():
+    DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock")
+    DOCKER_SWARM = (bool) (os.getenv('DOCKER_SWARM', False))
+    TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None)
+    FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml")
+    CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*")
+    CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS = (bool) (os.getenv("ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS", "false"))
+    CORS_ENDPOINTS = os.getenv("ENDPOINTS", "authorization,token,revocation,introspection,userinfo")
     api = get_docker_api(DOCKER_HOST)
     groupings = {}
     list_of_containers_or_services = api.services() if DOCKER_SWARM else api.containers()
