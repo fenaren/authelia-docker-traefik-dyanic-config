@@ -1,7 +1,8 @@
 import os
+import re
 import docker
 import requests
-import re
+import yaml
 # authelia string consts to read from labels
 CONST_AUTHELIA_STRING="authelia"
 
@@ -18,6 +19,7 @@ CONST_ACCESS_CONTROL_STRING="access_control"
 CONST_IDENTITY_PROVIDERS_STRING="identity_providers"
 CONST_OIDC_STRING = "oidc"
 CONST_CLIENTS_STRING = "clients"
+CONST_CORS_STRING = "cors"
 
 
 # TODO also return host regex rules too
@@ -43,8 +45,9 @@ def query_traefik_router_domain(TRAEFIK_HOST:str, traefik_router_name:str):
         print("Error: Response was not 200 (OK)", response)
     return None
 
+
 # retrieve the docker api, try 4 times with timeouts, if fail exit
-def get_docker_api(DOCKER_HOST):
+def get_docker_api(DOCKER_HOST:str):
     import time
     api=None
     errors=0
@@ -90,7 +93,7 @@ def array(current_data_structure, name:str, index:int):
 
 
 # iterate through the parts of the label and extract the data
-def recurse(current_data_structure, label_parts, label_value:str, label_part_index:int = 0):
+def recurse(current_data_structure, label_parts:list, label_value:str, label_part_index:int = 0):
     # check if current label_part has an array identifier    
     label_name, label_array_index = extract_array_from_string(label_parts[label_part_index])
     if label_array_index != -1:
@@ -118,7 +121,8 @@ def recurse(current_data_structure, label_parts, label_value:str, label_part_ind
         current_data_structure[label_name] = label_value
         return current_data_structure
 
-def get_inner_dict(outer_data_structure, label_parts, depth, start=0, final={}):
+
+def get_inner_dict(outer_data_structure, label_parts:list, depth:int, start:int=0, final={}):
     current_data_structure = outer_data_structure
     for i in range(start, depth):
         grouping_inner = current_data_structure.get(label_parts[i], final if i == depth -1 else {})
@@ -128,10 +132,10 @@ def get_inner_dict(outer_data_structure, label_parts, depth, start=0, final={}):
 
 
 # process label array, converting all labels into a pythonic data structure 
-def process_labels(labels):
+def process_labels(labels:dict):
     grouping = {}
     for label_name, label_value in labels.items(): #iterate label ITEMS (gets K,V pair)
-        label_parts = label_name.lower().split(".") #split into array 
+        label_parts = label_name.lower().split(".") #split into array
         if label_parts[0] == CONST_AUTHELIA_STRING:  # check if relevant / filter #TODO should check before split?
             __name_index = 0
             if label_parts[1] == CONST_ACCESS_CONTROL_STRING:
@@ -156,44 +160,53 @@ def process_labels(labels):
 
 
 # per entry, clean up the data for writing to file
-def post_process_single(TRAEFIK_HOST, entry):
+def post_process_single(TRAEFIK_HOST:str, grouping:dict):
+    result = {}
     # use traefik to find domain name 
-    if CONST_DOMAIN_STRING in entry and CONST_TRAEFIK_ROUTER_STRING in entry[CONST_DOMAIN_STRING]:
-        traefik_router_name = entry[CONST_DOMAIN_STRING][CONST_TRAEFIK_ROUTER_STRING]
-        domain = query_traefik_router_domain(TRAEFIK_HOST, traefik_router_name)
-        entry[CONST_DOMAIN_STRING] = ""
-        if domain is not None:
-            entry[CONST_DOMAIN_STRING] = domain
+    
+    if CONST_ACCESS_CONTROL_STRING in grouping:
+        inner = []
+        for entry in grouping[CONST_ACCESS_CONTROL_STRING].values():
+            for entry_inner in entry if isinstance(entry, list) else [entry]:
+            
+                if CONST_DOMAIN_STRING in entry_inner and CONST_TRAEFIK_ROUTER_STRING in entry_inner[CONST_DOMAIN_STRING]:
+                    traefik_router_name = entry_inner[CONST_DOMAIN_STRING][CONST_TRAEFIK_ROUTER_STRING]
+                    domain = query_traefik_router_domain(TRAEFIK_HOST, traefik_router_name)
+                    entry_inner[CONST_DOMAIN_STRING] = ""
+                    if domain is not None:
+                        entry_inner[CONST_DOMAIN_STRING] = domain
+                inner.append(entry_inner)
+        result[CONST_ACCESS_CONTROL_STRING] = inner
+    if CONST_IDENTITY_PROVIDERS_STRING in grouping:
+        inner = []
+        for entry in grouping[CONST_IDENTITY_PROVIDERS_STRING][CONST_OIDC_STRING][CONST_CLIENTS_STRING].values():
+            for entry_inner in entry if isinstance(entry, list) else [entry]:
+                inner.append(entry_inner)
+        result[CONST_IDENTITY_PROVIDERS_STRING] = {CONST_OIDC_STRING: {CONST_CLIENTS_STRING: inner } }
+    return result
 
 
 # clean up all the entries for writing to file
-def post_process(TRAEFIK_HOST:str, groupings):
-    file_yaml = {}
-    for grouping_name,grouping_value in groupings.items():
-        file_yaml_inner = None
-        iteratable = None
-        if grouping_name == CONST_IDENTITY_PROVIDERS_STRING and CONST_OIDC_STRING in grouping_value and CONST_CLIENTS_STRING in grouping_value[CONST_OIDC_STRING]:
-            file_yaml_inner = get_inner_dict(file_yaml, [CONST_IDENTITY_PROVIDERS_STRING, CONST_OIDC_STRING, CONST_CLIENTS_STRING], 3, start=0,final=[])
-            iteratable = grouping_value[CONST_OIDC_STRING][CONST_CLIENTS_STRING].values()
-        elif grouping_name == CONST_ACCESS_CONTROL_STRING:
-            file_yaml_inner = file_yaml.get(grouping_name, [])
-            file_yaml[grouping_name] = file_yaml_inner
-            iteratable = grouping_value.values()
-        if file_yaml_inner is not None and iteratable is not None:
-            for grouping_inner_value in iteratable:
-                    if isinstance(grouping_inner_value, list):
-                        for entry in grouping_inner_value:
-                            post_process_single(TRAEFIK_HOST, entry)
-                            file_yaml_inner.append(entry)
-                    else:
-                        post_process_single(TRAEFIK_HOST, grouping_inner_value)
-                        file_yaml_inner.append(grouping_inner_value)
-    return file_yaml
+def post_process_all(groupings:dict, CORS_ENDPOINTS:list, CORS_ALLOWED_ORIGINS:list, CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS:bool):
+    result = groupings.copy()
+    if CONST_IDENTITY_PROVIDERS_STRING in groupings.keys():
+        cors = {
+            CONST_IDENTITY_PROVIDERS_STRING: {
+                CONST_OIDC_STRING: {
+                    CONST_CORS_STRING: {
+                        "endpoints": CORS_ENDPOINTS,
+                        "allowed_origins": CORS_ALLOWED_ORIGINS,
+                        "allowed_origins_from_client_redirect_uris": CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS
+                    }
+                }
+            }
+        }
+        deep_merge(cors, result)
+    return result
 
 
 # writes the pythonic data structure to yaml file
-def write_to_file(file_path, rules):
-    import yaml
+def write_to_file(file_path:str, rules:dict):
     with open(file_path, "w") as _file:
         _file.write(yaml.dump(rules))
     print("Final Config: ")
@@ -202,28 +215,41 @@ def write_to_file(file_path, rules):
         print(_file.read())
 
 
-def deep_merge(original, update):
+def deep_merge(original:dict, update:dict):
     for key in original.keys():
         if key not in update:
             update[key] = original[key]
         elif key in update and isinstance(update[key], dict):
             deep_merge(original[key], update[key])
+        elif isinstance(original[key], list):
+            update[key].extend(original[key])
         else:
             update[key].update(original[key])
 
 
 # gets all the envvars, gets the labels and writes all to file
-def main(DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"), ENABLE_DOCKER_SWARM = os.getenv('DOCKER_SWARM', False), TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None), FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml")):
+def main(
+        DOCKER_HOST = os.getenv('DOCKER_HOST', "unix://var/run/docker.sock"),
+        DOCKER_SWARM = (bool) (os.getenv('DOCKER_SWARM', False)),
+        TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None),
+        FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml"),
+        CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*"),
+        CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS = (bool) (os.getenv("ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS", "false")),
+        CORS_ENDPOINTS = os.getenv("ENDPOINTS", "authorization,token,revocation,introspection,userinfo")
+        ):
     api = get_docker_api(DOCKER_HOST)
     groupings = {}
-    list_of_containers_or_services = api.services() if ENABLE_DOCKER_SWARM else api.containers()
+    list_of_containers_or_services = api.services() if DOCKER_SWARM else api.containers()
     for container in list_of_containers_or_services:
-        labels = container["Spec"]["Labels"] if ENABLE_DOCKER_SWARM else container["Labels"]
+        labels = container["Spec"]["Labels"] if DOCKER_SWARM else container["Labels"]
         result = process_labels(labels)
         if result is not None:
-            deep_merge(result, groupings)
-    full_config = post_process(TRAEFIK_HOST, groupings)
+            post = post_process_single(TRAEFIK_HOST, result)
+            if post is not None:
+                deep_merge(post, groupings)
     os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
+    
+    full_config = post_process_all(groupings, CORS_ENDPOINTS.split(","), CORS_ALLOWED_ORIGINS.split(","), CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS)
     write_to_file(FILE_PATH, full_config)
 
 
