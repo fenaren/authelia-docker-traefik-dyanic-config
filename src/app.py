@@ -237,8 +237,8 @@ def main(
         TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None),
         FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml"),
         CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*"),
-        CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS = os.getenv("ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS", "false"),
-        CORS_ENDPOINTS = os.getenv("ENDPOINTS", "authorization,token,revocation,introspection,userinfo")
+        CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS = os.getenv("CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS", "false"),
+        CORS_ENDPOINTS = os.getenv("CORS_ENDPOINTS", "authorization,token,revocation,introspection,userinfo")
         ):
     api = get_docker_api(DOCKER_HOST)
     if api is None:
