@@ -16,6 +16,7 @@ CONST_TRAEFIK_ROUTER_STRING="traefik_router"
 CONST_RULE_STRING="rule"
 
 CONST_ACCESS_CONTROL_STRING="access_control"
+CONST_RULES_STRING="rules"
 CONST_IDENTITY_PROVIDERS_STRING="identity_providers"
 CONST_OIDC_STRING = "oidc"
 CONST_CLIENTS_STRING = "clients"
@@ -137,8 +138,8 @@ def process_labels(labels:dict):
         label_parts = label_name.lower().split(".") #split into array
         if label_parts[0] == CONST_AUTHELIA_STRING:  # check if relevant / filter #TODO should check before split?
             __name_index = 0
-            if label_parts[1] == CONST_ACCESS_CONTROL_STRING:
-                __name_index = 2
+            if label_parts[1] == CONST_ACCESS_CONTROL_STRING and label_parts[2] == CONST_RULES_STRING:
+                __name_index = 3
             elif label_parts[1] == CONST_IDENTITY_PROVIDERS_STRING and label_parts[2] == CONST_OIDC_STRING and label_parts[3] == CONST_CLIENTS_STRING:
                 __name_index = 4
             label_name, label_array_index = extract_array_from_string(label_parts[__name_index])
@@ -163,9 +164,9 @@ def post_process_single(TRAEFIK_HOST:str, grouping:dict):
     result = {}
     # use traefik to find domain name 
     
-    if CONST_ACCESS_CONTROL_STRING in grouping:
+    if CONST_ACCESS_CONTROL_STRING in grouping and CONST_RULES_STRING in grouping[CONST_ACCESS_CONTROL_STRING]:
         inner = []
-        for entry in grouping[CONST_ACCESS_CONTROL_STRING].values():
+        for entry in grouping[CONST_ACCESS_CONTROL_STRING][CONST_RULES_STRING].values():
             for entry_inner in entry if isinstance(entry, list) else [entry]:
             
                 if CONST_DOMAIN_STRING in entry_inner and CONST_TRAEFIK_ROUTER_STRING in entry_inner[CONST_DOMAIN_STRING]:
@@ -175,18 +176,20 @@ def post_process_single(TRAEFIK_HOST:str, grouping:dict):
                     if domain is not None:
                         entry_inner[CONST_DOMAIN_STRING] = domain
                 inner.append(entry_inner)
-        result[CONST_ACCESS_CONTROL_STRING] = inner
-    if CONST_IDENTITY_PROVIDERS_STRING in grouping:
+        result[CONST_ACCESS_CONTROL_STRING] = { CONST_RULES_STRING: inner }
+    elif CONST_IDENTITY_PROVIDERS_STRING in grouping and CONST_OIDC_STRING in grouping[CONST_IDENTITY_PROVIDERS_STRING] and CONST_CLIENTS_STRING in grouping[CONST_IDENTITY_PROVIDERS_STRING][CONST_OIDC_STRING]:
         inner = []
         for entry in grouping[CONST_IDENTITY_PROVIDERS_STRING][CONST_OIDC_STRING][CONST_CLIENTS_STRING].values():
             for entry_inner in entry if isinstance(entry, list) else [entry]:
                 inner.append(entry_inner)
         result[CONST_IDENTITY_PROVIDERS_STRING] = {CONST_OIDC_STRING: {CONST_CLIENTS_STRING: inner } }
+    #else:
+    #    result = grouping
     return result
 
 
 # clean up all the entries for writing to file
-def post_process_all(groupings:dict, CORS_ENDPOINTS:list, CORS_ALLOWED_ORIGINS:list, CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS:bool):
+def post_process_all(groupings:dict, CORS_ENDPOINTS:list, CORS_ALLOWED_ORIGINS:list, CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS:str):
     result = groupings.copy()
     if CONST_IDENTITY_PROVIDERS_STRING in groupings.keys():
         cors = {
@@ -234,7 +237,7 @@ def main(
         TRAEFIK_HOST = os.getenv("TRAEFIK_HOST", None),
         FILE_PATH = os.getenv("FILE_PATH", "/config/configuration.yml"),
         CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*"),
-        CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS = (bool) (os.getenv("ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS", "false")),
+        CORS_ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS = os.getenv("ALLOWED_ORIGINS_FROM_CLIENT_REDIRECT_URIS", "false"),
         CORS_ENDPOINTS = os.getenv("ENDPOINTS", "authorization,token,revocation,introspection,userinfo")
         ):
     api = get_docker_api(DOCKER_HOST)
