@@ -177,7 +177,7 @@ def post_process_single(TRAEFIK_HOST:str, grouping:dict):
                         entry_inner[CONST_DOMAIN_STRING] = domain
                 inner.append(entry_inner)
         result[CONST_ACCESS_CONTROL_STRING] = { CONST_RULES_STRING: inner }
-    elif CONST_IDENTITY_PROVIDERS_STRING in grouping and CONST_OIDC_STRING in grouping[CONST_IDENTITY_PROVIDERS_STRING] and CONST_CLIENTS_STRING in grouping[CONST_IDENTITY_PROVIDERS_STRING][CONST_OIDC_STRING]:
+    if CONST_IDENTITY_PROVIDERS_STRING in grouping and CONST_OIDC_STRING in grouping[CONST_IDENTITY_PROVIDERS_STRING] and CONST_CLIENTS_STRING in grouping[CONST_IDENTITY_PROVIDERS_STRING][CONST_OIDC_STRING]:
         inner = []
         for entry in grouping[CONST_IDENTITY_PROVIDERS_STRING][CONST_OIDC_STRING][CONST_CLIENTS_STRING].values():
             for entry_inner in entry if isinstance(entry, list) else [entry]:
